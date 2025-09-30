@@ -10,30 +10,74 @@ type MeResponse = {
   account: { id: string; agency: string; number: string; balance: number; createdAt: string };
 };
 
+type TxItem = {
+  id: string;
+  kind: "DEPOSIT" | "WITHDRAW" | "TRANSFER" | string;
+  amount: number;
+  createdAt: string;
+  note?: string | null;
+  fromId?: string | null;
+  toId?: string | null;
+  from?: { id: string; number: string } | null;
+  to?: { id: string; number: string } | null;
+};
+
 export default function AppHome() {
   const [ready, setReady] = useState(false);
   const [user, setUser] = useState<MeResponse["user"] | null>(null);
   const [account, setAccount] = useState<MeResponse["account"] | null>(null);
 
+  // extrato
+  const [txs, setTxs] = useState<TxItem[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [loadingTx, setLoadingTx] = useState(false);
+
   useEffect(() => {
     const s = getSession();
     if (!s?.userId) { window.location.href = "/login"; return; }
 
-    fetch("/api/me", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ userId: s.userId }),
-    })
-      .then(r => r.json())
-      .then((json: MeResponse | { error: string }) => {
-        // @ts-expect-error runtime guard
-        if (json?.error) { window.location.href = "/login"; return; }
-        setUser((json as MeResponse).user);
-        setAccount((json as MeResponse).account);
+    (async () => {
+      try {
+        const res = await fetch("/api/me", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ userId: s.userId }),
+        });
+        if (!res.ok) { window.location.href = "/login"; return; }
+        const json: MeResponse | { error: string } = await res.json();
+        if ("error" in json) { window.location.href = "/login"; return; }
+
+        setUser(json.user);
+        setAccount(json.account);
         setReady(true);
-      })
-      .catch(() => { window.location.href = "/login"; });
+
+        // carregar extrato inicial
+        await fetchTx(json.account.id);
+      } catch {
+        window.location.href = "/login";
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  async function fetchTx(accountId: string, cursor?: string | null) {
+    setLoadingTx(true);
+    try {
+      const url = new URL("/api/tx/list", window.location.origin);
+      url.searchParams.set("accountId", accountId);
+      url.searchParams.set("limit", "8");
+      if (cursor) url.searchParams.set("cursor", cursor);
+
+      const r = await fetch(url.toString(), { method: "GET" });
+      const j: { ok?: boolean; items?: TxItem[]; nextCursor?: string | null; error?: string } = await r.json();
+      if (!r.ok || !j?.ok || !j.items) return;
+
+      setTxs(prev => [...prev, ...j.items!]);
+      setNextCursor(j.nextCursor ?? null);
+    } finally {
+      setLoadingTx(false);
+    }
+  }
 
   if (!ready) return <LoadingSkeleton />;
 
@@ -127,15 +171,39 @@ export default function AppHome() {
           </div>
         </aside>
 
-        {/* Statement (placeholder até implementarmos transações) */}
+        {/* Statement */}
         <div className="lg:col-span-2">
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-            <div className="flex items-center justify-between">
+            <div className="mb-2 flex items-center justify-between">
               <h3 className="text-sm font-semibold">Extrato</h3>
-              <span className="text-xs text-slate-500">em breve</span>
+              <span className="text-xs text-slate-500">últimas movimentações</span>
             </div>
 
-            <EmptyStatement />
+            {txs.length === 0 ? (
+              <EmptyStatement />
+            ) : (
+              <ul className="divide-y divide-slate-100">
+                {txs.map((t) => (
+                  <TxRow key={t.id} tx={t} selfId={account!.id} />
+                ))}
+              </ul>
+            )}
+
+            <div className="mt-4">
+              {nextCursor ? (
+                <button
+                  onClick={() => fetchTx(account!.id, nextCursor)}
+                  disabled={loadingTx}
+                  className="w-full rounded-lg border border-slate-200 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                >
+                  {loadingTx ? "Carregando..." : "Carregar mais"}
+                </button>
+              ) : (
+                txs.length > 0 && (
+                  <div className="text-center text-xs text-slate-500">Fim das movimentações</div>
+                )
+              )}
+            </div>
           </div>
         </div>
       </section>
@@ -196,11 +264,54 @@ function InfoRow({ k, v }: { k: string; v: string }) {
 
 function EmptyStatement() {
   return (
-    <div className="mt-4 rounded-xl border border-dashed border-slate-200 bg-slate-50/60 p-6 text-center">
+    <div className="mt-2 rounded-xl border border-dashed border-slate-200 bg-slate-50/60 p-6 text-center">
       <p className="text-sm text-slate-600">
         Nenhuma movimentação por enquanto. Faça um <b>depósito</b> ou <b>transferência</b> para começar.
       </p>
     </div>
+  );
+}
+
+function TxRow({ tx, selfId }: { tx: TxItem; selfId: string }) {
+  const isOut = tx.fromId === selfId && (tx.kind === "WITHDRAW" || tx.kind === "TRANSFER");
+  const isIn  = tx.toId === selfId && (tx.kind === "DEPOSIT" || tx.kind === "TRANSFER");
+
+  const sign = isOut ? "-" : "+";
+  const color =
+    tx.kind === "DEPOSIT" ? "text-emerald-600" :
+    tx.kind === "WITHDRAW" ? "text-rose-600" :
+    isOut ? "text-rose-600" : "text-emerald-600";
+
+  const badge =
+    tx.kind === "DEPOSIT" ? "bg-emerald-50 text-emerald-700 border-emerald-200" :
+    tx.kind === "WITHDRAW" ? "bg-rose-50 text-rose-700 border-rose-200" :
+    "bg-sky-50 text-sky-700 border-sky-200";
+
+  const counterpart = isOut ? tx.to?.number ?? "—" : tx.from?.number ?? "—";
+  const title =
+    tx.kind === "DEPOSIT" ? "Depósito" :
+    tx.kind === "WITHDRAW" ? "Saque" :
+    isOut ? `Transferência enviada • ${counterpart}` :
+            `Transferência recebida • ${counterpart}`;
+
+  return (
+    <li className="flex items-center justify-between gap-4 py-3">
+      <div className="min-w-0">
+        <div className="flex items-center gap-2">
+          <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium ${badge}`}>
+            {tx.kind}
+          </span>
+          <span className="truncate text-sm font-medium">{title}</span>
+        </div>
+        <div className="mt-0.5 text-xs text-slate-500">
+          {new Date(tx.createdAt).toLocaleString("pt-BR")}
+          {tx.note ? ` • ${tx.note}` : null}
+        </div>
+      </div>
+      <div className={`shrink-0 text-sm font-semibold ${color}`}>
+        {sign}{cents(tx.amount)}
+      </div>
+    </li>
   );
 }
 
