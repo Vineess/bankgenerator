@@ -67,7 +67,7 @@ export default function Home() {
                 </a>
                 <span className="ml-2 inline-flex items-center rounded-full bg-white/80 px-3 py-1 text-xs text-slate-700 ring-1 ring-slate-200 backdrop-blur">
                   <span className="mr-1 inline-block h-2 w-2 rounded-full bg-emerald-500" />
-                  Sem instituições financeiras - ambiente educativo.
+                  Persistência em PostgreSQL (Prisma) — ambiente educativo.
                 </span>
               </div>
             </div>
@@ -81,19 +81,19 @@ export default function Home() {
             desc="Geração automática de agência e número de conta com DV simples."
           />
           <Feature
-            title="Login local"
-            desc="Armazena usuários no navegador (localStorage). Sem backend."
+            title="Login + Backend"
+            desc="Autenticação com APIs Next.js, hash com bcryptjs e dados no PostgreSQL (Prisma)."
           />
           <Feature
             title="Interface simples"
-            desc="Saldo e ações básicas, perfeito para portfólio e estudos."
+            desc="Saldo e ações básicas, ideal para portfólio e estudos (UI estilo fintech)."
           />
         </div>
       </section>
 
       {/* rodapé */}
       <footer className="mx-auto w-full max-w-4xl px-6 pb-10 text-center text-xs text-slate-500">
-        © {new Date().getFullYear()} NovaBank EDU - Projeto open-source para fins
+        © {new Date().getFullYear()} NovaBank EDU — Projeto open-source para fins
         educativos. Não use dados reais.
       </footer>
     </main>
