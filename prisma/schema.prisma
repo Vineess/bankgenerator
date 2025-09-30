@@ -1,0 +1,48 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  cpf          String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+  account      Account?
+}
+
+model Account {
+  id        String   @id @default(cuid())
+  agency    String
+  number    String   @unique
+  balance   Int      @default(0) // em centavos
+  ownerId   String   @unique
+  owner     User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  // relations com Transaction (duas pontas)
+  txsFrom Transaction[] @relation("TxFrom")
+  txsTo   Transaction[] @relation("TxTo")
+}
+
+model Transaction {
+  id        String   @id @default(cuid())
+  kind      String // "DEPOSIT" | "WITHDRAW" | "TRANSFER"
+  amount    Int
+  createdAt DateTime @default(now())
+  note      String?
+
+  // from/to (opcional, ex.: depósito só tem 'to', saque só tem 'from')
+  fromId String?
+  toId   String?
+  from   Account? @relation("TxFrom", fields: [fromId], references: [id])
+  to     Account? @relation("TxTo", fields: [toId], references: [id])
+
+  @@index([fromId])
+  @@index([toId])
+}
