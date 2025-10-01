@@ -10,6 +10,8 @@ import {
   ArrowLeftRight,
   Search,
   X,
+  CreditCard,
+  LineChart,
 } from "lucide-react";
 
 type MeResponse = {
@@ -226,13 +228,22 @@ export default function AppHome() {
               <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
                 <Shortcut label="Pix (em breve)" />
                 <Shortcut label="Pagar boleto (em breve)" />
+
                 <a
                   href="/app/cards"
-                  className="w-full rounded-xl border border-slate-200 bg-white/70 px-4 py-3 text-left text-sm font-medium text-slate-700 shadow-sm backdrop-blur transition hover:brightness-105"
+                  className="flex items-center gap-2 w-full rounded-xl border border-slate-200 bg-white/70 px-4 py-3 text-left text-sm font-medium text-slate-700 shadow-sm backdrop-blur transition hover:brightness-105"
                 >
+                  <CreditCard className="h-4 w-4 text-slate-600" />
                   Cartões
                 </a>
-                <Shortcut label="Investir (em breve)" />
+
+                <a
+                  href="/app/invest"
+                  className="flex items-center gap-2 w-full rounded-xl border border-slate-200 bg-white/70 px-4 py-3 text-left text-sm font-medium text-slate-700 shadow-sm backdrop-blur transition hover:brightness-105"
+                >
+                  <LineChart className="h-4 w-4 text-emerald-600" />
+                  Investir
+                </a>
               </div>
             </div>
           </div>

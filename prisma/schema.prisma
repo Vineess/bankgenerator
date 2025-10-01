@@ -52,7 +52,8 @@ model Account {
   txsTo   Transaction[] @relation("TxTo")
 
   // Cartões
-  cards Card[]
+  cards     Card[]
+  positions InvestmentPosition[]
 }
 
 model Transaction {
@@ -102,4 +103,35 @@ model Card {
   @@index([accountId])
   @@index([status])
   @@index([type])
+}
+
+model InvestmentProduct {
+  id               String   @id @default(cuid())
+  code             String   @unique
+  name             String
+  description      String
+  // taxa por minuto em ppm (parts per million). Ex.: 800 ppm = 0.08% por minuto
+  minuteRatePpm    Int
+  minAmountCents   Int      @default(1000) // R$ 10,00
+  liquidityMinutes Int      @default(0) // 0 = liquidez imediata
+  createdAt        DateTime @default(now())
+
+  positions InvestmentPosition[]
+}
+
+model InvestmentPosition {
+  id             String    @id @default(cuid())
+  accountId      String
+  productId      String
+  principalCents Int
+  openedAt       DateTime  @default(now())
+  status         String    @default("ACTIVE") // ACTIVE | CLOSED
+  closedAt       DateTime?
+  redeemedCents  Int? // valor recebido no resgate
+
+  account Account           @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  product InvestmentProduct @relation(fields: [productId], references: [id], onDelete: Restrict)
+
+  @@index([accountId])
+  @@index([productId])
 }
