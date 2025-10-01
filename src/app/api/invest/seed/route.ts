@@ -9,7 +9,7 @@ export async function POST() {
       code: "CDB-FLEX",
       name: "CDB Flex",
       description: "Liquidez imediata, rendimento a cada minuto.",
-      minuteRatePpm: 500,   // 0,05%/min (DEMO)
+      minuteRatePpm: 2500,   // 0,25%/min (DEMO)
       minAmountCents: 5000, // R$ 50
       liquidityMinutes: 0,
     },
@@ -17,17 +17,17 @@ export async function POST() {
       code: "CDB-PLUS",
       name: "CDB Plus",
       description: "Liquidez 60 min, taxa maior.",
-      minuteRatePpm: 800,    // 0,08%/min
+      minuteRatePpm: 4300,    // 0,43%/min
       minAmountCents: 10000, // R$ 100
-      liquidityMinutes: 60,
+      liquidityMinutes: 2,
     },
     {
       code: "CDB-TURBO",
       name: "CDB Turbo",
       description: "Liquidez 180 min, taxa turbinada.",
-      minuteRatePpm: 1200,   // 0,12%/min
+      minuteRatePpm: 6800,   // 0,68%/min
       minAmountCents: 10000,
-      liquidityMinutes: 180,
+      liquidityMinutes: 3,
     },
   ];
 

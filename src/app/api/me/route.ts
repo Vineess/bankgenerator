@@ -1,12 +1,21 @@
+// src/app/api/me/route.ts
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { bigintsToNumbers } from "@/lib/bigint";
+
 export const runtime = "nodejs";
 
 export async function POST(req: Request) {
-  const { userId } = await req.json();
-  if (!userId) return NextResponse.json({ error: "no session" }, { status: 401 });
-  const user = await prisma.user.findUnique({ where: { id: String(userId) } });
-  if (!user) return NextResponse.json({ error: "not found" }, { status: 404 });
-  const account = await prisma.account.findUnique({ where: { ownerId: user.id } });
-  return NextResponse.json({ user, account });
+  try {
+    const { userId } = await req.json();
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) return NextResponse.json({ error: "Sessão inválida." }, { status: 401 });
+
+    const account = await prisma.account.findUnique({ where: { ownerId: user.id } });
+
+    return NextResponse.json(bigintsToNumbers({ user, account }));
+  } catch (e) {
+    console.error(e);
+    return NextResponse.json({ error: "Erro interno." }, { status: 500 });
+  }
 }

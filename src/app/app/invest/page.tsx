@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Logo from "@/components/Logo";
 import { getSession } from "@/lib/session";
 import {
@@ -10,6 +10,7 @@ import {
   Coins,
   Trash2,
   Trash,
+  X,
 } from "lucide-react";
 
 type MeResponse = {
@@ -49,6 +50,29 @@ function cents(v?: number | null) {
     style: "currency",
     currency: "BRL",
   });
+}
+
+/** ------------ helpers p/ resgate parcial ------------ */
+function maskMoneyBRL(raw: string) {
+  const digits = (raw ?? "").replace(/\D/g, "");
+  const n = Number(digits || "0") / 100;
+  return n.toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+}
+function parseMoneyToCents(mask: string) {
+  const norm = (mask ?? "").replace(/\s|R\$/g, "").replace(/\./g, "").replace(",", ".");
+  const n = Number(norm || "0");
+  return Math.max(0, Math.round(n * 100));
+}
+function redeemMath(currentCents: number, principalCents: number, chosenCents: number) {
+  const current = Math.max(0, currentCents);
+  const principal = Math.max(0, principalCents);
+  const gain = Math.max(0, current - principal);
+  const value = Math.min(chosenCents, current);
+  const p = current > 0 ? value / current : 0;
+  const gainPart = Math.round(gain * p);
+  const fee = Math.round(gainPart * 0.01); // 1% do ganho proporcional
+  const net = Math.max(0, value - fee);
+  return { value, fee, net, gainPart, p };
 }
 
 /** ---------------- Tabs (Ativos / Encerrados) ---------------- */
@@ -117,6 +141,11 @@ export default function InvestPage() {
   // filtro de lista
   const [tab, setTab] = useState<"ACTIVE" | "CLOSED">("ACTIVE");
 
+  // modal de resgate
+  const [redeemOpen, setRedeemOpen] = useState(false);
+  const [redeemPos, setRedeemPos] = useState<Position | null>(null);
+  const [redeemAmountTxt, setRedeemAmountTxt] = useState<string>("");
+
   // tick para atualizar valores por minuto na UI
   useEffect(() => {
     const t = setInterval(() => {
@@ -171,7 +200,6 @@ export default function InvestPage() {
   }
 
   function fmtRate(ppm: number) {
-    // exibe em %/min
     return (ppm / 10000).toFixed(2) + "%/min";
   }
 
@@ -198,7 +226,6 @@ export default function InvestPage() {
     }
     setAmount("");
     await loadPositions(me.account.id, true);
-    // atualiza saldo consultando /api/me
     const re = await fetch("/api/me", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -207,18 +234,35 @@ export default function InvestPage() {
     setMe(await re.json());
   }
 
-  async function onRedeem(id: string) {
-    if (!me?.account?.id) return;
+  /** -------- abrir modal de resgate -------- */
+  function openRedeemModal(p: Position) {
+    setRedeemPos(p);
+    setRedeemAmountTxt(cents(p.currentCents)); // padrão: tudo
+    setRedeemOpen(true);
+  }
+
+  /** -------- confirmar resgate (parcial/total) -------- */
+  async function confirmRedeem() {
+    if (!me?.account?.id || !redeemPos) return;
+    const chosen = parseMoneyToCents(redeemAmountTxt);
+    const total = chosen <= 0 || chosen >= redeemPos.currentCents;
+
     const r = await fetch("/api/invest/redeem", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ accountId: me.account.id, positionId: id }),
+      body: JSON.stringify({
+        accountId: me.account.id,
+        positionId: redeemPos.id,
+        amountCents: total ? undefined : chosen,
+      }),
     });
     const j = await r.json();
     if (!r.ok) {
       alert(j.error || "Erro ao resgatar.");
       return;
     }
+    setRedeemOpen(false);
+    setRedeemPos(null);
     await loadPositions(me.account.id, true);
     const re = await fetch("/api/me", {
       method: "POST",
@@ -274,6 +318,17 @@ export default function InvestPage() {
   const investedActive = active.reduce((acc, p) => acc + (p.principalCents || 0), 0);
   const currentActive = active.reduce((acc, p) => acc + (p.currentCents || 0), 0);
   const gainActive = active.reduce((acc, p) => acc + (p.gainCents || 0), 0);
+
+  // Preview do modal
+  // Preview do modal (sem useMemo)
+  const preview = (() => {
+    if (!redeemPos) return { value: 0, fee: 0, net: 0 };
+    const chosen = parseMoneyToCents(redeemAmountTxt);
+    const chosenOrAll =
+      chosen <= 0 ? redeemPos.currentCents : Math.min(chosen, redeemPos.currentCents);
+    return redeemMath(redeemPos.currentCents, redeemPos.principalCents, chosenOrAll);
+  })();
+
 
   return (
     <main className="relative min-h-screen overflow-hidden">
@@ -512,7 +567,7 @@ export default function InvestPage() {
                     <div className="mt-2 flex flex-wrap items-center gap-2">
                       {pos.status === "ACTIVE" ? (
                         <button
-                          onClick={() => onRedeem(pos.id)}
+                          onClick={() => openRedeemModal(pos)}
                           className="rounded-lg bg-slate-900 px-3 py-1.5 text-sm font-medium text-white hover:brightness-110"
                         >
                           Resgatar
@@ -543,6 +598,80 @@ export default function InvestPage() {
           </div>
         </div>
       </section>
+
+      {/* -------- Modal de Resgate -------- */}
+      {redeemOpen && redeemPos && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4">
+          <div className="w-full max-w-lg rounded-2xl border border-slate-200 bg-white p-5 shadow-xl">
+            <div className="mb-3 flex items-start justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold">Resgatar – {redeemPos.product.name}</div>
+                <div className="text-xs text-slate-500">
+                  Valor atual: <b>{cents(redeemPos.currentCents)}</b> • Aplicado:{" "}
+                  <b>{cents(redeemPos.principalCents)}</b>
+                </div>
+              </div>
+              <button
+                onClick={() => setRedeemOpen(false)}
+                className="rounded-lg border border-slate-200 bg-white p-1 text-slate-600 hover:bg-slate-50"
+                aria-label="Fechar"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div className="grid grid-cols-3 gap-2">
+                <div className="col-span-2">
+                  <label className="block text-xs font-medium">Valor a resgatar</label>
+                  <input
+                    value={redeemAmountTxt}
+                    onChange={(e) => setRedeemAmountTxt(maskMoneyBRL(e.target.value))}
+                    placeholder={cents(redeemPos.currentCents)}
+                    className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-slate-700"
+                  />
+                </div>
+                <div className="flex items-end">
+                  <button
+                    onClick={() => setRedeemAmountTxt(cents(redeemPos.currentCents))}
+                    className="h-[38px] w-full rounded-lg border border-slate-200 bg-slate-50 text-sm font-medium text-slate-700 hover:bg-slate-100"
+                  >
+                    Resgatar tudo
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2 text-sm">
+                <div className="rounded-lg bg-slate-50 px-3 py-2 ring-1 ring-slate-200">
+                  <div className="text-[11px] text-slate-500">Resgate</div>
+                  <div className="font-semibold">{cents(preview.value)}</div>
+                </div>
+                <div className="rounded-lg bg-amber-50 px-3 py-2 ring-1 ring-amber-200">
+                  <div className="text-[11px] text-amber-700">Taxa (1% do ganho)</div>
+                  <div className="font-semibold text-amber-700">{cents(preview.fee)}</div>
+                </div>
+                <div className="rounded-lg bg-emerald-50 px-3 py-2 ring-1 ring-emerald-200">
+                  <div className="text-[11px] text-emerald-700">Receber líquido</div>
+                  <div className="font-semibold text-emerald-700">{cents(preview.net)}</div>
+                </div>
+              </div>
+
+              <div className="text-xs text-slate-500">
+                A taxa é aplicada somente sobre o ganho proporcional ao valor resgatado.
+              </div>
+
+              <div className="pt-2">
+                <button
+                  onClick={confirmRedeem}
+                  className="w-full rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:brightness-110"
+                >
+                  Confirmar resgate
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

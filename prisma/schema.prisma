@@ -9,9 +9,7 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-/**
- * ------------------ Enums (Cartões) ------------------
- */
+/* ------------------ Enums ------------------ */
 
 enum CardType {
   DEBIT
@@ -24,9 +22,14 @@ enum CardStatus {
   CANCELED
 }
 
-/**
- * ------------------ Models ------------------
- */
+enum PixKeyType {
+  CPF
+  EMAIL
+  PHONE
+  EVP      // chave aleatória
+}
+
+/* ------------------ Models ------------------ */
 
 model User {
   id           String   @id @default(cuid())
@@ -42,7 +45,7 @@ model Account {
   id        String   @id @default(cuid())
   agency    String
   number    String   @unique
-  balance   Int      @default(0) // em centavos
+  balance   BigInt   @default(0) // em centavos (BigInt para evitar overflow)
   ownerId   String   @unique
   owner     User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
@@ -53,13 +56,22 @@ model Account {
 
   // Cartões
   cards     Card[]
+
+  // Investimentos
   positions InvestmentPosition[]
+
+  // PIX
+  pixKeys PixKey[]
+
+  // relações de PixTransfer (saídas e entradas)
+  pixOut PixTransfer[] @relation("PixFrom")
+  pixIn  PixTransfer[] @relation("PixTo")
 }
 
 model Transaction {
   id        String   @id @default(cuid())
-  kind      String // "DEPOSIT" | "WITHDRAW" | "TRANSFER"
-  amount    Int
+  kind      String   // "DEPOSIT" | "WITHDRAW" | "TRANSFER" (pode incluir "PIX_IN"/"PIX_OUT" futuramente)
+  amount    BigInt
   createdAt DateTime @default(now())
   note      String?
 
@@ -93,9 +105,9 @@ model Card {
 
   status CardStatus @default(ACTIVE)
 
-  // Somente para crédito
-  creditLimit     Int? // centavos
-  availableCredit Int? // centavos
+  // Somente para crédito (centavos em BigInt também)
+  creditLimit     BigInt? // centavos
+  availableCredit BigInt? // centavos
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -112,8 +124,8 @@ model InvestmentProduct {
   description      String
   // taxa por minuto em ppm (parts per million). Ex.: 800 ppm = 0.08% por minuto
   minuteRatePpm    Int
-  minAmountCents   Int      @default(1000) // R$ 10,00
-  liquidityMinutes Int      @default(0) // 0 = liquidez imediata
+  minAmountCents   BigInt   @default(1000) // R$ 10,00
+  liquidityMinutes Int      @default(0)    // 0 = liquidez imediata
   createdAt        DateTime @default(now())
 
   positions InvestmentPosition[]
@@ -123,15 +135,60 @@ model InvestmentPosition {
   id             String    @id @default(cuid())
   accountId      String
   productId      String
-  principalCents Int
+  principalCents BigInt
   openedAt       DateTime  @default(now())
   status         String    @default("ACTIVE") // ACTIVE | CLOSED
   closedAt       DateTime?
-  redeemedCents  Int? // valor recebido no resgate
+  redeemedCents  BigInt? // valor recebido no resgate
 
   account Account           @relation(fields: [accountId], references: [id], onDelete: Cascade)
   product InvestmentProduct @relation(fields: [productId], references: [id], onDelete: Restrict)
 
   @@index([accountId])
   @@index([productId])
+}
+
+/* ------------------ PIX ------------------ */
+
+// Chaves Pix do cliente (CPF/EMAIL/PHONE/EVP)
+model PixKey {
+  id        String     @id @default(cuid())
+
+  accountId String
+  account   Account    @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  type      PixKeyType
+  value     String     // normalizado: CPF/telefone só dígitos, email lower, EVP uuid-like
+  isPrimary Boolean    @default(false)
+
+  createdAt DateTime   @default(now())
+
+  @@unique([type, value])          // chave única no sistema
+  @@index([accountId, type])
+}
+
+// Transferência Pix (log e comprovante)
+model PixTransfer {
+  id            String   @id @default(cuid())
+  endToEndId    String              // removido @unique (ver unique composto abaixo)
+  fromAccountId String?
+  toAccountId   String?
+  amount        BigInt
+  description   String?
+  direction     String              // "OUT" | "IN"
+  status        String              // "COMPLETED" | "FAILED"
+  createdAt     DateTime @default(now())
+  completedAt   DateTime?
+
+  from Account? @relation("PixFrom", fields: [fromAccountId], references: [id])
+  to   Account? @relation("PixTo",   fields: [toAccountId],   references: [id])
+
+  @@index([fromAccountId])
+  @@index([toAccountId])
+
+  // Permite OUT e IN com o mesmo E2E
+  @@unique([endToEndId, direction])
+
+  // Busca rápida por E2E
+  @@index([endToEndId])
 }
