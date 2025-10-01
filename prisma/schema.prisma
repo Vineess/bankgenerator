@@ -1,3 +1,5 @@
+// prisma/schema.prisma
+
 generator client {
   provider = "prisma-client-js"
 }
@@ -7,13 +9,33 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+/**
+ * ------------------ Enums (Cartões) ------------------
+ */
+
+enum CardType {
+  DEBIT
+  CREDIT
+}
+
+enum CardStatus {
+  ACTIVE
+  BLOCKED
+  CANCELED
+}
+
+/**
+ * ------------------ Models ------------------
+ */
+
 model User {
   id           String   @id @default(cuid())
   name         String
   cpf          String   @unique
   passwordHash String
   createdAt    DateTime @default(now())
-  account      Account?
+
+  account Account?
 }
 
 model Account {
@@ -25,9 +47,12 @@ model Account {
   owner     User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   createdAt DateTime @default(now())
 
-  // relations com Transaction (duas pontas)
+  // Transações (duas pontas)
   txsFrom Transaction[] @relation("TxFrom")
   txsTo   Transaction[] @relation("TxTo")
+
+  // Cartões
+  cards Card[]
 }
 
 model Transaction {
@@ -45,4 +70,36 @@ model Transaction {
 
   @@index([fromId])
   @@index([toId])
+}
+
+model Card {
+  id String @id @default(cuid())
+
+  accountId String
+  account   Account @relation(fields: [accountId], references: [id])
+
+  type       CardType
+  isVirtual  Boolean  @default(false)
+  brand      String   @default("VISA") // DEMO
+  holderName String
+
+  // Segurança: não armazenamos PAN real; apenas token e last4
+  last4    String
+  panToken String
+
+  expMonth Int
+  expYear  Int
+
+  status CardStatus @default(ACTIVE)
+
+  // Somente para crédito
+  creditLimit     Int? // centavos
+  availableCredit Int? // centavos
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([accountId])
+  @@index([status])
+  @@index([type])
 }
